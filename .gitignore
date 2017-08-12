@@ -1,6 +1,3 @@
-# Custom files
-credentials.json
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -102,3 +99,6 @@ ENV/
 
 # mypy
 .mypy_cache/
+.idea/
+credentials.json
+telegram.log

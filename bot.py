@@ -1,32 +1,45 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import requests
 import json
 import logging
 
-# Edit the credentials.json file with your credentials
-# credentials.json is in gitignore, so it won't be uploaded to the repository
-jfile = open('credentials.json', 'r')
-cred = json.load(jfile)
-jfile.close()
+# Get credentials
+try:
+    jfile = open('credentials.json', 'r')
+    cred = json.load(jfile)
+    jfile.close()
+except json.decoder.JSONDecodeError:
+    print("Wrong format in 'credentials.json'. See 'credentials_example.json'")
+    quit(1)
+except FileNotFoundError:
+    print("'credentials.json' not found. Rename 'credentials_example.json' to 'credentials.json' "
+          "and fill it with your credentials")
+    quit(1)
 
 # Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=cred['loglevel'])
+logFormatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(format=logFormatter,
+                    level=logging.DEBUG, filename='telegram.log')
+log = logging.getLogger(__name__)
+consoleHandler = logging.StreamHandler()
+consoleHandler.setFormatter(logging.Formatter(logFormatter))
+log.addHandler(consoleHandler)
 
-logger = logging.getLogger(__name__)
 
 if cred['user'] != '':
     dzurl = "http://{}:{}@{}:{}/json.htm?".format(cred['user'], cred['password'], cred['ip'], cred['port'])
 else:
     dzurl = "http://{}:{}/json.htm?".format(cred['ip'], cred['port'])
-#  se podria usar los requiest con requests.get(dzurl, auth=('user', 'password'))
-#  pero habria que cambiarlos todos
 
-# TODO check if domoticz server is reacheble
+# Check if reachable
+try:
+    r = requests.get(dzurl)
+except requests.exceptions.ConnectionError:
+    log.critical("Can not reach domoticz server. Check connection and credentials in 'credentials.json'")
+    quit(1)
 
 # r = requests.get(dzurl + 'type=devices&rid=32')  # Potus fertilidad
 # print(r.status_code)
@@ -39,16 +52,16 @@ def getvaloridx(idx):
     requrl = dzurl + 'type=devices&rid=' + str(idx)
     r = requests.get(requrl)
     if r.status_code != 200:
-        logger.warning('error {} al intentar conectarse a {}'.format(r.status_code, requrl))
+        log.warning('error {} al intentar conectarse a {}'.format(r.status_code, requrl))
         return None
     j = r.json()
     if j['status'] != 'OK':
-        logger.warning('El sensor idx{} respondio con status: {}'.format(idx, j['status']))
+        log.warning('El sensor idx{} respondio con status: {}'.format(idx, j['status']))
         return None
     try:
         ret = j['result'][0]['Data']
     except KeyError:
-        logger.warning("El sensor idx{} no devuelve 'result'".format(idx, j['status']))
+        log.warning("El sensor idx{} no devuelve 'result'".format(idx, j['status']))
         ret = None
     return ret
 
@@ -86,11 +99,11 @@ def plantas(bot, update):
 
 def echo(bot, update):
     update.message.reply_text("No entiendo " + update.message.text)
-    logger.warning("Comando o frase '{}' no contemplada".format(update.message.text))
+    log.info("Comando o frase '{}' no contemplada".format(update.message.text))
 
 
 def error(bot, update, error):
-    logger.warning('Update "%s" caused error "%s"' % (update, error))
+    log.warning('Update "%s" caused error "%s"' % (update, error))
 
 
 def main():
