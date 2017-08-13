@@ -8,7 +8,11 @@ class BotDb:
     _okusers = []
     _allusers = []
 
-    def __init__(self):
+    def __init__(self, filename=None):
+        if filename:
+            self.filename = filename
+        else:
+            self.filename = 'bot.sqlite'
         self._open()
         self._create_table() # Only if it doesnt exist
         self._read_all_users()
@@ -69,7 +73,7 @@ class BotDb:
         return False
 
     def _open(self):
-        self.conn = sqlite3.connect('bot.sqlite')
+        self.conn = sqlite3.connect(self.filename)
         self.c = self.conn.cursor()
 
     def _close(self):

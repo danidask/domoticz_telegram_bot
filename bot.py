@@ -10,6 +10,11 @@ import requests
 import json
 import logging
 from botdb import *
+import os, sys
+
+
+# Absolute path for the files
+path = os.path.dirname(sys.argv[0])
 
 initmessage = '/temperatura - temperatura de casa\n' \
               '/plantas - informacion de las plantas'
@@ -17,7 +22,7 @@ initmessage = '/temperatura - temperatura de casa\n' \
 # Get credentials
 cred = {}
 try:
-    jfile = open('credentials.json', 'r')
+    jfile = open(os.path.join(path, 'credentials.json'), 'r')
     cred = json.load(jfile)
     jfile.close()
 except json.decoder.JSONDecodeError:
@@ -42,7 +47,7 @@ if cred['loglevel'] == 'DEBUG':
 else:
     logl = logging.getLevelName(cred['loglevel'].upper())
     logging.basicConfig(format=logFormatter,
-                        level=logl, filename='telegram.log')
+                        level=logl, filename=os.path.join(path, 'telegram.log'))
     log = logging.getLogger(__name__)
     consoleHandler = logging.StreamHandler()
     consoleHandler.setFormatter(logging.Formatter(logFormatter))
@@ -71,7 +76,7 @@ log.info("Connected to domoticz server. ip {} port {}".format(cred['ip'], cred['
 
 
 # Initialize the database
-db = BotDb()
+db = BotDb(filename=os.path.join(path, 'bot.sqlite'))
 
 
 def getvaloridx(idx):
@@ -100,8 +105,12 @@ def restricted(func):
     @wraps(func)
     def wrapped(bot, update, *args, **kwargs):
         user_id = update.effective_chat.id
-        # FIXME this username is null for groups
-        user_name = update.effective_chat.username
+        # TODO test if this works. It has to pick group name or user name
+        if update.effective_chat.title:
+            user_name = update.effective_chat.title
+            #user_name = update.message.chat.title
+        else:
+            user_name = update.effective_chat.username
         if not db.userallowed(user_id):
             print("Unauthorized access denied for {}.".format(user_id))
             response = "You don't have permission for this. Aks the admin."
