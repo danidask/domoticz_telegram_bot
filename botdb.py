@@ -14,6 +14,9 @@ class BotDb:
         self._read_all_users()
         self._read_allaw_users()
         self._close()
+        if len(self._allusers) == 0:
+            print("Empty database. First user will be added as administrator")
+
 
     def _create_table(self):
         # date as YYYY-MM-DD HH:MM:SS
@@ -21,10 +24,13 @@ class BotDb:
                        "'chat_id' NUMERIC, 'name' TEXT, 'permission' INTEGER DEFAULT 0, 'first_seen' TEXT)")
 
     def add_user(self, chatid, name):
+        #If database is empty, add the first user as administrator
+        if len(self._allusers) == 0:
+            self._add_administrator(chatid, name)
+            return
         # Check if already exists
-        for id in self._allusers:
-            if id == chatid:
-                return
+        if chatid in self._allusers:
+            return
         self._open()
         # TODO real date
         fsdate = '2017-01-11 13:53:39'
@@ -34,6 +40,20 @@ class BotDb:
         self._close()
         self._allusers.append(chatid)
         print("New register added: chat_id {}, name {}, first_seen {}".format(chatid, name, fsdate))
+
+
+    def _add_administrator(self, chatid, name):
+        self._open()
+        # TODO real date
+        fsdate = '2017-01-11 13:53:39'
+        self.c.execute("INSERT INTO users ('ID', 'chat_id', 'name', 'permission', 'first_seen') "
+                       "VALUES(1, {}, '{}', 1, '{}')".format(chatid, name, fsdate))
+        self.conn.commit()
+        self._close()
+        self._allusers.append(chatid)
+        self._okusers.append(chatid)
+        print("Admin added: chat_id {}, name {}, first_seen {}".format(chatid, name, fsdate))
+
 
     def _read_all_users(self):
         self.c.execute("SELECT chat_id FROM users")
@@ -50,10 +70,8 @@ class BotDb:
     def userallowed(self, chatid):
         """Return True if the chatid is in the database with the 'permission' flag
         False otherwise"""
-        # TODO can be done with if chatid in dbid
-        for dbid in self._okusers:
-            if dbid == chatid:
-                return True
+        if chatid in self._okusers:
+            return True
         return False
 
     def _open(self):
