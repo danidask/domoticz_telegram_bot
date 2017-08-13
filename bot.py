@@ -24,7 +24,7 @@ except FileNotFoundError:
 # Enable logging
 logFormatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=logFormatter,
-                    level=logging.DEBUG, filename='telegram.log')
+                    level=logging.getLevelName(cred['loglevel'].upper()), filename='telegram.log')
 log = logging.getLogger(__name__)
 consoleHandler = logging.StreamHandler()
 consoleHandler.setFormatter(logging.Formatter(logFormatter))
