@@ -100,6 +100,7 @@ def restricted(func):
     @wraps(func)
     def wrapped(bot, update, *args, **kwargs):
         user_id = update.effective_chat.id
+        # FIXME this username is null for groups
         user_name = update.effective_chat.username
         if not db.userallowed(user_id):
             print("Unauthorized access denied for {}.".format(user_id))
