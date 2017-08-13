@@ -78,8 +78,7 @@ class BotDb:
 
     def give_permission(self, chatid):
         sqq = "UPDATE users SET permission = 1 WHERE chat_id = {}".format(chatid)
-        print(sqq)
         self._open()
         self.c.execute(sqq)
-        print(self.conn.commit())
+        self.conn.commit()
         self._close()
