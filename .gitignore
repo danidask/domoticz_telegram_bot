@@ -102,3 +102,4 @@ ENV/
 .idea/
 credentials.json
 telegram.log
+/bot.sqlite

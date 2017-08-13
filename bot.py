@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# https://github.com/python-telegram-bot/python-telegram-bot
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.error import (TelegramError, Unauthorized, BadRequest,
                             TimedOut, ChatMigrated, NetworkError)
 import requests
 import json
 import logging
+from botdb import *
+
+initmessage = '/temperatura - temperatura de casa\n' \
+              '/plantas - informacion de las plantas'
 
 # Get credentials
 try:
@@ -23,8 +28,9 @@ except FileNotFoundError:
 
 # Enable logging
 logFormatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logl = logging.getLevelName(cred['loglevel'].upper())
 logging.basicConfig(format=logFormatter,
-                    level=logging.getLevelName(cred['loglevel'].upper()), filename='telegram.log')
+                    level=logl, filename='telegram.log')
 log = logging.getLogger(__name__)
 consoleHandler = logging.StreamHandler()
 consoleHandler.setFormatter(logging.Formatter(logFormatter))
@@ -38,18 +44,23 @@ else:
 
 # Check if reachable
 try:
-    r = requests.get(dzurl)
+    r = requests.get(dzurl + 'type=devices')
 except requests.exceptions.ConnectionError:
     log.critical("Can not reach domoticz server. Check connection and credentials in 'credentials.json'")
     quit(1)
 log.info("Connected to domoticz server. ip {} port {}".format(cred['ip'], cred['port']))
 
-# r = requests.get(dzurl + 'type=devices&rid=32')  # Potus fertilidad
+# r = requests.get(dzurl + 'type=devices')
 # print(r.status_code)
 # print(r.text)
 # j = r.json()
 # print(j['status'])  # 'OK'
 # print(j['result'][0]['Data'])  # 'Off' 'On'
+
+
+# Initialize the database
+db = BotDb()
+
 
 def getvaloridx(idx):
     requrl = dzurl + 'type=devices&rid=' + str(idx)
@@ -69,35 +80,57 @@ def getvaloridx(idx):
     return ret
 
 
+def domoticzlog(message):
+    requests.get(dzurl + 'type=command&param=addlogmessage&message=' + message)
+
+
 # Define a few command handlers. These usually take the two arguments bot and
 # update. Error handlers also receive the raised TelegramError object in error.
 def start(bot, update):
-    update.message.reply_text('Hi!')
+    update.message.reply_text(initmessage)
 
 
 def help(bot, update):
-    update.message.reply_text('Help!')
+    update.message.reply_text(initmessage)
+
+
+def userallow(user):
+    userid = user['id']
+    username = user['username']
+    if db.userallowed(userid):
+        return True
+    log.info("{} is not allowed. id {}.".format(username, userid))
+    db.add_user(userid, username)  # Add user without permission, admin have to change permission if wanted
+    return False
 
 
 def temperatura(bot, update):
-    temp = getvaloridx(30)  # potus temp
-    if not temp:
-        respuesta = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
+    if not userallow(update.message.from_user):
+        response = "You don't have permission for this. Aks the admin."
     else:
-        respuesta = 'Temperatura en casa: {}'.format(temp)
-    update.message.reply_text(respuesta)
+        temp = getvaloridx(30)  # potus temp
+        if not temp:
+            response = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
+        else:
+            response = 'Temperatura en casa: {}'.format(temp)
+        domoticzlog("'temperatura' info requested from telegram bot")
+    update.message.reply_text(response)
 
 
 def plantas(bot, update):
-    hum = getvaloridx(29)  # potus humedad
-    fert = getvaloridx(32)  # potus fertilidad
-    if not hum or not fert:
-        respuesta = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
+    if not userallow(update.message.from_user):
+        response = "You don't have permission for this. Aks the admin."
     else:
-        respuesta = '''Potus:
-        Humedad: {} (20-50)
-        Fertilizante: {} (350-2000)'''.format(hum, fert)
-    update.message.reply_text(respuesta)
+        hum = getvaloridx(29)  # potus humedad
+        fert = getvaloridx(32)  # potus fertilidad
+        if not hum or not fert:
+            response = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
+        else:
+            response = '''Potus:
+            Humedad: {} (20-50)
+            Fertilizante: {} (350-2000)'''.format(hum, fert)
+        domoticzlog("'plantas' info requested from telegram bot")
+    update.message.reply_text(response)
 
 
 def echo(bot, update):
@@ -105,12 +138,27 @@ def echo(bot, update):
     log.info("Frase '{}' no contemplada".format(update.message.text))
 
 
-def error(bot, update, error):
+def error_callback(bot, update, error):
     try:
         raise error
     except Unauthorized:
-        log.critical("TOKEN incorrect. See and check 'credentials.json' file.")
-        quit(1)
+        pass
+    # remove update.message.chat_id from conversation list
+    except BadRequest:
+        pass
+    # handle malformed requests - read more below!
+    except TimedOut:
+        pass
+    # handle slow connection problems
+    except NetworkError:
+        pass
+    # handle other connection problems
+    except ChatMigrated as e:
+        pass
+    # the chat_id of a group has changed, use e.new_chat_id instead
+    except TelegramError:
+        pass
+    # handle all other telegram related errors
     log.warning('Update "%s" caused error "%s"' % (update, error))
 
 
@@ -131,12 +179,11 @@ def main():
     dp.add_handler(MessageHandler(Filters.text, echo))
 
     # log all errors
-    dp.add_error_handler(error)
+    dp.add_error_handler(error_callback)
 
     # Start the Bot
     updater.start_polling()
 
-    #telegram.error.Unauthorized
     log.info("Bot connected. Listening...")
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
