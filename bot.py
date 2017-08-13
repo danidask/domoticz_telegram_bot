@@ -5,6 +5,7 @@
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.error import (TelegramError, Unauthorized, BadRequest,
                             TimedOut, ChatMigrated, NetworkError)
+from functools import wraps
 import requests
 import json
 import logging
@@ -14,6 +15,7 @@ initmessage = '/temperatura - temperatura de casa\n' \
               '/plantas - informacion de las plantas'
 
 # Get credentials
+cred = {}
 try:
     jfile = open('credentials.json', 'r')
     cred = json.load(jfile)
@@ -25,16 +27,26 @@ except FileNotFoundError:
     print("'credentials.json' not found. Rename 'credentials_example.json' to 'credentials.json' "
           "and fill it with your credentials")
     quit(1)
+except:
+    print("Unexpected error trying to read 'credentials.json'")
+    quit(1)
 
 # Enable logging
+# TODO this is so ugly
 logFormatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logl = logging.getLevelName(cred['loglevel'].upper())
-logging.basicConfig(format=logFormatter,
-                    level=logl, filename='telegram.log')
-log = logging.getLogger(__name__)
-consoleHandler = logging.StreamHandler()
-consoleHandler.setFormatter(logging.Formatter(logFormatter))
-log.addHandler(consoleHandler)
+if cred['loglevel'] == 'DEBUG':
+    logl = logging.getLevelName(cred['loglevel'].upper())
+    logging.basicConfig(format=logFormatter,
+                        level=logl)
+    log = logging.getLogger(__name__)
+else:
+    logl = logging.getLevelName(cred['loglevel'].upper())
+    logging.basicConfig(format=logFormatter,
+                        level=logl, filename='telegram.log')
+    log = logging.getLogger(__name__)
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(logging.Formatter(logFormatter))
+    log.addHandler(consoleHandler)
 
 
 if cred['user'] != '':
@@ -84,6 +96,23 @@ def domoticzlog(message):
     requests.get(dzurl + 'type=command&param=addlogmessage&message=' + message)
 
 
+def restricted(func):
+    @wraps(func)
+    def wrapped(bot, update, *args, **kwargs):
+        user_id = update.effective_chat.id
+        user_name = update.effective_chat.username
+        if not db.userallowed(user_id):
+            print("Unauthorized access denied for {}.".format(user_id))
+            response = "You don't have permission for this. Aks the admin."
+            bot.send_message(update.effective_chat.id, text=response, quote=False)
+            db.add_user(user_id, user_name)  # Add to database without permissions
+            log.info("{} is not allowed. id {}.".format(user_name, user_id))
+
+            return
+        return func(bot, update, *args, **kwargs)
+    return wrapped
+
+
 # Define a few command handlers. These usually take the two arguments bot and
 # update. Error handlers also receive the raised TelegramError object in error.
 def start(bot, update):
@@ -94,43 +123,35 @@ def help(bot, update):
     update.message.reply_text(initmessage)
 
 
-def userallow(user):
-    userid = user['id']
-    username = user['username']
-    if db.userallowed(userid):
-        return True
-    log.info("{} is not allowed. id {}.".format(username, userid))
-    db.add_user(userid, username)  # Add user without permission, admin have to change permission if wanted
-    return False
+def test(bot, update):
+    print("eff ", update.effective_chat.id)
+    #update.message.text('test command', quote=False)
+    bot.send_message(update.effective_chat.id, text='Beep!', quote=False)
 
-
+@restricted
 def temperatura(bot, update):
-    if not userallow(update.message.from_user):
-        response = "You don't have permission for this. Aks the admin."
+    temp = getvaloridx(30)  # potus temp
+    if not temp:
+        response = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
     else:
-        temp = getvaloridx(30)  # potus temp
-        if not temp:
-            response = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
-        else:
-            response = 'Temperatura en casa: {}'.format(temp)
-        domoticzlog("'temperatura' info requested from telegram bot")
-    update.message.reply_text(response)
+        response = 'Temperatura en casa: {}'.format(temp)
+    domoticzlog("'temperatura' info requested from telegram bot")
+    #update.message.reply_text(response)
+    bot.send_message(update.effective_chat.id, text=response, quote=False)
 
-
+@restricted
 def plantas(bot, update):
-    if not userallow(update.message.from_user):
-        response = "You don't have permission for this. Aks the admin."
+    hum = getvaloridx(29)  # potus humedad
+    fert = getvaloridx(32)  # potus fertilidad
+    if not hum or not fert:
+        response = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
     else:
-        hum = getvaloridx(29)  # potus humedad
-        fert = getvaloridx(32)  # potus fertilidad
-        if not hum or not fert:
-            response = 'No he podido hacer la consulta. Intentalo mas tarde o revisa si hay algo mal.'
-        else:
-            response = '''Potus:
-            Humedad: {} (20-50)
-            Fertilizante: {} (350-2000)'''.format(hum, fert)
-        domoticzlog("'plantas' info requested from telegram bot")
-    update.message.reply_text(response)
+        response = '''Potus:
+        Humedad: {} (20-50)
+        Fertilizante: {} (350-2000)'''.format(hum, fert)
+    domoticzlog("'plantas' info requested from telegram bot")
+    # update.message.reply_text(response)
+    bot.send_message(update.effective_chat.id, text=response, quote=False)
 
 
 def echo(bot, update):
@@ -172,6 +193,7 @@ def main():
     # on different commands - answer in Telegram
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help))
+    dp.add_handler(CommandHandler("test", test))
     dp.add_handler(CommandHandler("temperatura", temperatura))
     dp.add_handler(CommandHandler("plantas", plantas))
 
