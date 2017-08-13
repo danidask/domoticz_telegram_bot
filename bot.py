@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.error import (TelegramError, Unauthorized, BadRequest,
+                            TimedOut, ChatMigrated, NetworkError)
 import requests
 import json
 import logging
@@ -40,6 +42,7 @@ try:
 except requests.exceptions.ConnectionError:
     log.critical("Can not reach domoticz server. Check connection and credentials in 'credentials.json'")
     quit(1)
+log.info("Connected to domoticz server. ip {} port {}".format(cred['ip'], cred['port']))
 
 # r = requests.get(dzurl + 'type=devices&rid=32')  # Potus fertilidad
 # print(r.status_code)
@@ -99,10 +102,15 @@ def plantas(bot, update):
 
 def echo(bot, update):
     update.message.reply_text("No entiendo " + update.message.text)
-    log.info("Comando o frase '{}' no contemplada".format(update.message.text))
+    log.info("Frase '{}' no contemplada".format(update.message.text))
 
 
 def error(bot, update, error):
+    try:
+        raise error
+    except Unauthorized:
+        log.critical("TOKEN incorrect. See and check 'credentials.json' file.")
+        quit(1)
     log.warning('Update "%s" caused error "%s"' % (update, error))
 
 
@@ -127,6 +135,9 @@ def main():
 
     # Start the Bot
     updater.start_polling()
+
+    #telegram.error.Unauthorized
+    log.info("Bot connected. Listening...")
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since
